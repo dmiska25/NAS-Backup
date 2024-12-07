@@ -11,11 +11,18 @@ import androidx.navigation.navigation
 fun AppNavigation(modifier: Modifier) {
     val navController = rememberNavController()
 
-    NavHost(navController = navController, startDestination = NavRoutes.MAIN_MENU, modifier = modifier) {
+    NavHost(
+        navController = navController,
+        startDestination = NavRoutes.MAIN_MENU,
+        modifier = modifier
+    ) {
         composable(NavRoutes.MAIN_MENU) {
             MainMenuScreen(nav = navController)
         }
-        navigation(startDestination = NavRoutes.CONFIGURATION_MAIN, route = NavRoutes.CONFIGURATION) {
+        navigation(
+            startDestination = NavRoutes.CONFIGURATION_MAIN,
+            route = NavRoutes.CONFIGURATION
+        ) {
             composable(NavRoutes.CONFIGURATION_MAIN) {
                 ConfigurationScreen(nav = navController)
             }

@@ -23,7 +23,8 @@ class MainActivity : ComponentActivity() {
             NASBackupTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     AppNavigation(
-                        modifier = Modifier
+                        modifier =
+                        Modifier
                             .padding(innerPadding)
                             .fillMaxSize()
                     )
@@ -38,7 +39,8 @@ class MainActivity : ComponentActivity() {
 fun MainActivityPreview() {
     NASBackupTheme {
         AppNavigation(
-            modifier = Modifier
+            modifier =
+            Modifier
                 .fillMaxSize()
         )
     }

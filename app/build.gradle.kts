@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.jetbrains.kotlin.android)
     alias(libs.plugins.dagger.hilt.android)
+    alias(libs.plugins.ktlint)
     id("org.jetbrains.kotlin.kapt")
 }
 
@@ -49,6 +50,12 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+}
+
+configure<org.jlleitschuh.gradle.ktlint.KtlintExtension> {
+    debug.set(true)
+    verbose.set(true)
+    android.set(true)
 }
 
 dependencies {
