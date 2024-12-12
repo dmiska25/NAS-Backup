@@ -13,5 +13,8 @@ fun MainMenuScreen(nav: NavHostController) {
         Button(onClick = { nav.navigate(NavRoutes.CONFIGURATION) }) {
             Text("Configuration")
         }
+        Button(onClick = { nav.navigate(NavRoutes.BACKUP_NOW) }) {
+            Text("Backup Now")
+        }
     }
 }

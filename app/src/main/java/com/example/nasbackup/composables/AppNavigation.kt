@@ -30,6 +30,9 @@ fun AppNavigation(modifier: Modifier) {
                 FileSelectionScreen(nav = navController)
             }
         }
+        composable(NavRoutes.BACKUP_NOW) {
+            BackupNowScreen(nav = navController)
+        }
     }
 }
 
@@ -38,4 +41,5 @@ object NavRoutes {
     const val CONFIGURATION = "CONFIGURATION"
     const val CONFIGURATION_MAIN = "CONFIGURATION_MAIN"
     const val CONFIGURATION_SELECT_FILES = "CONFIGURATION_SELECT_FILES"
+    const val BACKUP_NOW = "BACKUP_NOW"
 }
