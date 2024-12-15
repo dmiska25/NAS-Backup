@@ -37,30 +37,21 @@ class BackupManager @Inject constructor(
         return try {
             val selectedFiles = fileSelectionStateManager.selectedFiles.value
             if (selectedFiles.isEmpty()) {
-                println("No files selected for backup.")
                 return false
             }
 
             // Create the "BackupNow" folder on the NAS
             val uri = "${nasDirectory.canonicalPath}/BackupNow/"
-            println("BACKUP NOW URI: $uri")
             val backupNowFolder = SmbFile(uri, nasDirectory.context)
             if (!backupNowFolder.exists()) {
                 backupNowFolder.mkdirs()
             }
-            val hasWriteAccess = (backupNowFolder.getAttributes() and SmbFile.FILE_WRITE_DATA) != 0
-            println("BackupNow folder attributes: ${backupNowFolder.getAttributes()}")
-            println("BackupNow folder write access: $hasWriteAccess")
-
-            println("BackupNow folder is writable: ${backupNowFolder.canWrite()}")
 
             // Iterate through each selected file/directory and copy it to the NAS
             for (file in selectedFiles) {
                 val localFile = File(file)
                 if (localFile.exists()) {
                     copyToNas(localFile, backupNowFolder)
-                } else {
-                    println("File does not exist: $file")
                 }
             }
 
@@ -78,7 +69,6 @@ class BackupManager @Inject constructor(
             if (localFile.isDirectory) {
                 // Recursively copy directory
                 val uri = "${nasDirectory.canonicalPath}${localFile.name}"
-                println("URI: $uri")
                 val targetDir = SmbFile(uri, nasDirectory.context) // Use the parent's context
 
                 targetDir.mkdirs()

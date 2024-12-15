@@ -11,12 +11,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -24,31 +19,19 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import com.example.nasbackup.views.BackupNowViewModel
-import java.util.Properties
-import jcifs.CIFSContext
-import jcifs.config.PropertyConfiguration
-import jcifs.context.BaseContext
-import jcifs.smb.NtlmPasswordAuthenticator
 import jcifs.smb.SmbFile
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 
 @Composable
 fun BackupNowScreen(nav: NavHostController, viewModel: BackupNowViewModel = hiltViewModel()) {
     val context = LocalContext.current
-    var isConnectionSetupComplete by remember { mutableStateOf(false) }
-    var isBackupLocationSelected by remember { mutableStateOf(false) }
-    var showConnectionSetup by remember { mutableStateOf(false) }
-    var showBackupLocationSetup by remember { mutableStateOf(false) }
-    var ipAddress by remember { mutableStateOf("") }
-    var shareName by remember { mutableStateOf("") }
-    var username by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    var isConnectionTestSuccessful by remember { mutableStateOf(false) }
-    var currentDirectory by remember { mutableStateOf<SmbFile?>(null) }
-    var directories by remember { mutableStateOf<List<SmbFile>>(emptyList()) }
-    var selectedDirectory by remember { mutableStateOf<SmbFile?>(null) }
-    val coroutineScope = rememberCoroutineScope()
+
+    val isConnectionSetupComplete by viewModel.isConnectionSetupComplete.collectAsState()
+    val isBackupLocationSelected by viewModel.isBackupLocationSelected.collectAsState()
+    val isConnectionTestSuccessful by viewModel.isConnectionTestSuccessful.collectAsState()
+    val showConnectionSetup by viewModel.showConnectionSetup.collectAsState()
+    val showBackupLocationSetup by viewModel.showBackupLocationSetup.collectAsState()
+    val directories by viewModel.directories.collectAsState()
+    val currentDirectory by viewModel.currentDirectory.collectAsState()
 
     Column(
         modifier = Modifier
@@ -60,9 +43,9 @@ fun BackupNowScreen(nav: NavHostController, viewModel: BackupNowViewModel = hilt
         // Header
         PageHeader(title = "Backup Now", onBack = { nav.navigate(NavRoutes.MAIN_MENU) })
 
-        // Buttons for navigating between steps
+        // Buttons
         Button(
-            onClick = { showConnectionSetup = true },
+            onClick = { viewModel.showConnectionSetup() },
             enabled = !isConnectionSetupComplete,
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -70,7 +53,7 @@ fun BackupNowScreen(nav: NavHostController, viewModel: BackupNowViewModel = hilt
         }
 
         Button(
-            onClick = { showBackupLocationSetup = true },
+            onClick = { viewModel.showBackupLocationSetup() },
             enabled = isConnectionSetupComplete && !isBackupLocationSelected,
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -79,9 +62,7 @@ fun BackupNowScreen(nav: NavHostController, viewModel: BackupNowViewModel = hilt
 
         Button(
             onClick = {
-                viewModel.performBackupAsync(
-                    currentDirectory!!
-                ) {
+                viewModel.performBackupAsync {
                     if (it) {
                         Toast.makeText(context, "Backup Successful", Toast.LENGTH_SHORT).show()
                     } else {
@@ -95,82 +76,73 @@ fun BackupNowScreen(nav: NavHostController, viewModel: BackupNowViewModel = hilt
             Text("Backup Now")
         }
 
-        // Conditional displays for each step
+        // Conditional UI
         if (showConnectionSetup) {
-            ConnectionSetup(
-                ipAddress = ipAddress,
-                shareName = shareName,
-                username = username,
-                password = password,
-                onIpAddressChange = { ipAddress = it },
-                onShareNameChange = { shareName = it },
-                onUsernameChange = { username = it },
-                onPasswordChange = { password = it },
+            ConnectionSetupUI(
+                ipAddressInitial = viewModel.ipAddress,
+                shareNameInitial = viewModel.shareName,
+                usernameInitial = viewModel.username,
+                passwordInitial = viewModel.password,
                 isConnectionTestSuccessful = isConnectionTestSuccessful,
-                onTestConnection = {
-                    coroutineScope.launch(Dispatchers.IO) {
-                        isConnectionTestSuccessful = testSMBConnection(
-                            ipAddress,
-                            shareName,
-                            username,
-                            password
-                        ) { rootDirectory ->
-                            currentDirectory = rootDirectory
-                            directories = rootDirectory?.listFiles()?.toList() ?: emptyList()
-                        }
-                    }
-                },
-                onConfirm = {
-                    if (isConnectionTestSuccessful) {
-                        isConnectionSetupComplete = true
-                        showConnectionSetup = false
-                    }
-                }
+                onIpAddressChange = { viewModel.updateIpAddress(it) },
+                onShareNameChange = { viewModel.updateShareName(it) },
+                onUsernameChange = { viewModel.updateUsername(it) },
+                onPasswordChange = { viewModel.updatePassword(it) },
+                onTestConnection = { viewModel.testConnection() },
+                onConfirm = { viewModel.confirmConnection() }
             )
         }
 
         if (showBackupLocationSetup) {
-            BackupLocationSelection(
-                currentDirectory = currentDirectory,
+            BackupLocationSelectionUI(
                 directories = directories,
-                onNavigateToDirectory = { directory ->
-                    coroutineScope.launch(Dispatchers.IO) {
-                        currentDirectory = directory
-                        directories = directory.listFiles()?.toList() ?: emptyList()
-                    }
-                },
-                onSelectDirectory = { selectedDirectory = it },
-                onConfirm = {
-                    isBackupLocationSelected = true
-                    showBackupLocationSetup = false
-                }
+                onNavigateToDirectory = { viewModel.navigateToDirectory(it) },
+                onConfirm = { viewModel.confirmBackupLocation() },
+                currentDirectory = currentDirectory
             )
         }
     }
 }
 
 @Composable
-fun ConnectionSetup(
-    ipAddress: String,
-    shareName: String,
-    username: String,
-    password: String,
+private fun ConnectionSetupUI(
+    ipAddressInitial: String,
+    shareNameInitial: String,
+    usernameInitial: String,
+    passwordInitial: String,
+    isConnectionTestSuccessful: Boolean,
     onIpAddressChange: (String) -> Unit,
     onShareNameChange: (String) -> Unit,
     onUsernameChange: (String) -> Unit,
     onPasswordChange: (String) -> Unit,
-    isConnectionTestSuccessful: Boolean,
     onTestConnection: () -> Unit,
     onConfirm: () -> Unit
 ) {
+    var ipAddress by remember { mutableStateOf(ipAddressInitial) }
+    var shareName by remember { mutableStateOf(shareNameInitial) }
+    var username by remember { mutableStateOf(usernameInitial) }
+    var password by remember { mutableStateOf(passwordInitial) }
+
     Column(
         verticalArrangement = Arrangement.spacedBy(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        TextFieldWithLabel("IP Address", ipAddress, onIpAddressChange)
-        TextFieldWithLabel("Share Name", shareName, onShareNameChange)
-        TextFieldWithLabel("Username", username, onUsernameChange)
-        TextFieldWithLabel("Password", password, onPasswordChange)
+        TextFieldWithLabel("IP Address", ipAddress) {
+            ipAddress = it
+            onIpAddressChange(it)
+        }
+        TextFieldWithLabel("Share Name", shareName) {
+            shareName = it
+            onShareNameChange(it)
+        }
+        TextFieldWithLabel("Username", username) {
+            username = it
+            onUsernameChange(it)
+        }
+        TextFieldWithLabel("Password", password) {
+            password = it
+            onPasswordChange(it)
+        }
 
         Button(onClick = onTestConnection, modifier = Modifier.fillMaxWidth()) {
             Text("Test Connection")
@@ -187,14 +159,13 @@ fun ConnectionSetup(
 }
 
 @Composable
-fun BackupLocationSelection(
-    currentDirectory: SmbFile?,
+private fun BackupLocationSelectionUI(
     directories: List<SmbFile>,
     onNavigateToDirectory: (SmbFile) -> Unit,
-    onSelectDirectory: (SmbFile) -> Unit,
-    onConfirm: () -> Unit
+    onConfirm: () -> Unit,
+    currentDirectory: SmbFile?,
+    viewModel: BackupNowViewModel = hiltViewModel()
 ) {
-    val coroutineScope = rememberCoroutineScope()
     var isLoading by remember { mutableStateOf(false) }
 
     Column(
@@ -209,19 +180,15 @@ fun BackupLocationSelection(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable {
-                            coroutineScope.launch(Dispatchers.IO) {
-                                isLoading = true
-                                try {
-                                    if (dir.isDirectory) {
-                                        onNavigateToDirectory(dir)
-                                    } else {
-                                        onSelectDirectory(dir)
-                                    }
-                                } catch (e: Exception) {
-                                    e.printStackTrace()
-                                } finally {
-                                    isLoading = false
-                                }
+                            isLoading = true
+                            try {
+                                viewModel.isDirectoryAsync(dir, onIsTrue = {
+                                    onNavigateToDirectory(dir)
+                                })
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            } finally {
+                                isLoading = false
                             }
                         }
                         .padding(8.dp),
@@ -235,46 +202,9 @@ fun BackupLocationSelection(
         Button(
             onClick = onConfirm,
             modifier = Modifier.fillMaxWidth(),
-            enabled = !isLoading
+            enabled = !isLoading && currentDirectory != null
         ) {
             Text(if (isLoading) "Loading..." else "Confirm")
         }
-    }
-}
-
-fun testSMBConnection(
-    ipAddress: String,
-    shareName: String,
-    username: String,
-    password: String,
-    onSuccess: (SmbFile?) -> Unit
-): Boolean {
-    return try {
-        val smbUrl = "smb://$ipAddress/$shareName/"
-        println("Attempting to connect to SMB URL: $smbUrl")
-
-        val properties = Properties().apply {
-            put("jcifs.smb.client.minVersion", "SMB202")
-            put("jcifs.smb.client.maxVersion", "SMB311")
-        }
-        val config = PropertyConfiguration(properties)
-        val baseContext: CIFSContext = BaseContext(config)
-        val authContext = baseContext.withCredentials(
-            NtlmPasswordAuthenticator("", username, password)
-        )
-        val smbFile = SmbFile(smbUrl, authContext)
-
-        if (smbFile.exists()) {
-            println("Connection successful: $smbUrl")
-            onSuccess(smbFile)
-            true
-        } else {
-            println("Connection failed: $smbUrl")
-            false
-        }
-    } catch (e: Exception) {
-        e.printStackTrace()
-        println("Connection error: ${e.message}")
-        false
     }
 }
