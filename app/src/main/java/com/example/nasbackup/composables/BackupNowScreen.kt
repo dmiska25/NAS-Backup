@@ -26,6 +26,7 @@ fun BackupNowScreen(nav: NavHostController, viewModel: BackupNowViewModel = hilt
     val isBackupLocationSelected by viewModel.isBackupLocationSelected.collectAsState()
     val isConnectionTestSuccessful by viewModel.isConnectionTestSuccessful.collectAsState()
     val isTestingConnection by viewModel.isTestingConnection.collectAsState()
+    val isBackingUp by viewModel.isBackingUp.collectAsState()
     val showConnectionSetup by viewModel.showConnectionSetup.collectAsState()
     val showBackupLocationSetup by viewModel.showBackupLocationSetup.collectAsState()
     val directories by viewModel.directories.collectAsState()
@@ -86,10 +87,15 @@ fun BackupNowScreen(nav: NavHostController, viewModel: BackupNowViewModel = hilt
                         !isLoading &&
                         !isTestingConnection &&
                         !showConnectionSetup &&
-                        !showBackupLocationSetup,
+                        !showBackupLocationSetup &&
+                        !isBackingUp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Backup Now")
+                    if (!isBackingUp) {
+                        Text("Backup Now")
+                    } else {
+                        CircularProgressIndicator()
+                    }
                 }
 
                 if (showConnectionSetup) {

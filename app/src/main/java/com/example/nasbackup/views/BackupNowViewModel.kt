@@ -34,6 +34,9 @@ class BackupNowViewModel @Inject constructor(
     private val _isTestingConnection = MutableStateFlow(false)
     val isTestingConnection: StateFlow<Boolean> = _isTestingConnection
 
+    private val _isBackingUp = MutableStateFlow(false)
+    val isBackingUp: StateFlow<Boolean> = _isBackingUp
+
     private val _isConnectionSetupComplete = MutableStateFlow(false)
     val isConnectionSetupComplete: StateFlow<Boolean> = _isConnectionSetupComplete
 
@@ -269,7 +272,11 @@ class BackupNowViewModel @Inject constructor(
     }
 
     fun performBackupAsync(onComplete: (Boolean) -> Unit) {
+        if (_isBackingUp.value) {
+            return
+        }
         val dir = _currentDirectory.value ?: return
+        _isBackingUp.value = true
         backupManager.performBackupAsync(dir) { success ->
             if (success) {
                 viewModelScope.launch {
@@ -283,6 +290,7 @@ class BackupNowViewModel @Inject constructor(
                 }
             }
             onComplete(success)
+            _isBackingUp.value = false
         }
     }
 
