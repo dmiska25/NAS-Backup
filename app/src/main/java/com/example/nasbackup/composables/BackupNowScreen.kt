@@ -2,14 +2,11 @@ package com.example.nasbackup.composables
 
 import android.widget.Toast
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -25,6 +22,7 @@ import jcifs.smb.SmbFile
 fun BackupNowScreen(nav: NavHostController, viewModel: BackupNowViewModel = hiltViewModel()) {
     val context = LocalContext.current
 
+    val isLoading by viewModel.isLoading.collectAsState()
     val isConnectionSetupComplete by viewModel.isConnectionSetupComplete.collectAsState()
     val isBackupLocationSelected by viewModel.isBackupLocationSelected.collectAsState()
     val isConnectionTestSuccessful by viewModel.isConnectionTestSuccessful.collectAsState()
@@ -33,73 +31,84 @@ fun BackupNowScreen(nav: NavHostController, viewModel: BackupNowViewModel = hilt
     val directories by viewModel.directories.collectAsState()
     val currentDirectory by viewModel.currentDirectory.collectAsState()
 
-    Column(
+    Box(
         modifier = Modifier
+            .fillMaxSize()
             .padding(16.dp)
-            .fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Header
-        PageHeader(title = "Backup Now", onBack = { nav.navigate(NavRoutes.MAIN_MENU) })
+        if (isLoading) {
+            LoadingScreen(text = "Verifying previous connection...")
+        } else {
+            // Main UI
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                PageHeader(title = "Backup Now", onBack = { nav.navigate(NavRoutes.MAIN_MENU) })
 
-        // Buttons
-        Button(
-            onClick = { viewModel.showConnectionSetup() },
-            enabled = !isConnectionSetupComplete,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Connection Setup")
-        }
-
-        Button(
-            onClick = { viewModel.showBackupLocationSetup() },
-            enabled = isConnectionSetupComplete && !isBackupLocationSelected,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Backup Location")
-        }
-
-        Button(
-            onClick = {
-                viewModel.performBackupAsync {
-                    if (it) {
-                        Toast.makeText(context, "Backup Successful", Toast.LENGTH_SHORT).show()
-                    } else {
-                        Toast.makeText(context, "Backup Failed", Toast.LENGTH_SHORT).show()
-                    }
+                Button(
+                    onClick = { viewModel.showConnectionSetup() },
+                    enabled = !isConnectionSetupComplete,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Connection Setup")
                 }
-            },
-            enabled = isConnectionSetupComplete && isBackupLocationSelected,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Backup Now")
-        }
 
-        // Conditional UI
-        if (showConnectionSetup) {
-            ConnectionSetupUI(
-                ipAddressInitial = viewModel.ipAddress,
-                shareNameInitial = viewModel.shareName,
-                usernameInitial = viewModel.username,
-                passwordInitial = viewModel.password,
-                isConnectionTestSuccessful = isConnectionTestSuccessful,
-                onIpAddressChange = { viewModel.updateIpAddress(it) },
-                onShareNameChange = { viewModel.updateShareName(it) },
-                onUsernameChange = { viewModel.updateUsername(it) },
-                onPasswordChange = { viewModel.updatePassword(it) },
-                onTestConnection = { viewModel.testConnection() },
-                onConfirm = { viewModel.confirmConnection() }
-            )
-        }
+                Button(
+                    onClick = { viewModel.showBackupLocationSetup() },
+                    enabled = isConnectionSetupComplete && !isBackupLocationSelected,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Backup Location")
+                }
 
-        if (showBackupLocationSetup) {
-            BackupLocationSelectionUI(
-                directories = directories,
-                onNavigateToDirectory = { viewModel.navigateToDirectory(it) },
-                onConfirm = { viewModel.confirmBackupLocation() },
-                currentDirectory = currentDirectory
-            )
+                Button(
+                    onClick = {
+                        viewModel.performBackupAsync {
+                            if (it) {
+                                Toast.makeText(
+                                    context,
+                                    "Backup Successful",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            } else {
+                                Toast.makeText(context, "Backup Failed", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    },
+                    enabled = isConnectionSetupComplete && isBackupLocationSelected,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Backup Now")
+                }
+
+                if (showConnectionSetup) {
+                    ConnectionSetupUI(
+                        ipAddressInitial = viewModel.ipAddress,
+                        shareNameInitial = viewModel.shareName,
+                        usernameInitial = viewModel.username,
+                        passwordInitial = viewModel.password,
+                        isConnectionTestSuccessful = isConnectionTestSuccessful,
+                        onIpAddressChange = { viewModel.ipAddress = it },
+                        onShareNameChange = { viewModel.shareName = it },
+                        onUsernameChange = { viewModel.username = it },
+                        onPasswordChange = { viewModel.password = it },
+                        onTestConnection = { viewModel.testConnection() },
+                        onConfirm = { viewModel.confirmConnection() }
+                    )
+                }
+
+                if (showBackupLocationSetup) {
+                    BackupLocationSelectionUI(
+                        directories = directories,
+                        onNavigateToDirectory = { viewModel.navigateToDirectory(it) },
+                        onConfirm = { viewModel.confirmBackupLocation() },
+                        currentDirectory = currentDirectory
+                    )
+                }
+            }
         }
     }
 }
@@ -206,5 +215,18 @@ private fun BackupLocationSelectionUI(
         ) {
             Text(if (isLoading) "Loading..." else "Confirm")
         }
+    }
+}
+
+@Composable
+private fun LoadingScreen(text: String) {
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        CircularProgressIndicator()
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(text)
     }
 }

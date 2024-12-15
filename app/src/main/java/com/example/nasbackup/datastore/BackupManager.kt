@@ -1,7 +1,5 @@
 package com.example.nasbackup.datastore
 
-import android.content.Context
-import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.io.FileInputStream
 import javax.inject.Inject
@@ -15,7 +13,6 @@ import kotlinx.coroutines.withContext
 
 @Singleton
 class BackupManager @Inject constructor(
-    @ApplicationContext private val context: Context,
     private val fileSelectionStateManager: FileSelectionStateManager
 ) {
     /**

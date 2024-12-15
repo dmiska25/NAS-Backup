@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 
 @Singleton
 class BackupNowStateManager @Inject constructor(
@@ -22,19 +23,22 @@ class BackupNowStateManager @Inject constructor(
 ) {
     private val dataStore = context.dataStore
 
-    private val _savedCredentials = MutableStateFlow<SmbCredentials?>(null)
+    // Synchronously load initial values before setting up the flows
+    private val initialCredentials = runBlocking { getSavedCredentialsFromDataStore() }
+    private val initialBackupDirectory = runBlocking { getSavedBackupDirectoryFromDataStore() }
+
+    // Initialize StateFlows with the initial loaded values
+    private val _savedCredentials = MutableStateFlow<SmbCredentials?>(initialCredentials)
     val savedCredentials: StateFlow<SmbCredentials?> = _savedCredentials
 
-    private val _savedBackupDirectory = MutableStateFlow<String?>(null)
+    private val _savedBackupDirectory = MutableStateFlow<String?>(initialBackupDirectory)
     val savedBackupDirectory: StateFlow<String?> = _savedBackupDirectory
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     init {
+        // Now we set up collectors to update these flows when DataStore changes:
         scope.launch {
-            val initialCredentials = getSavedCredentialsFromDataStore()
-            _savedCredentials.value = initialCredentials
-
             dataStore.data.map { prefs ->
                 val ip = prefs[IP_KEY]
                 val share = prefs[SHARE_KEY]
@@ -48,10 +52,9 @@ class BackupNowStateManager @Inject constructor(
             }.collect { credentials ->
                 _savedCredentials.value = credentials
             }
+        }
 
-            val initialBackupDirectory = getSavedBackupDirectoryFromDataStore()
-            _savedBackupDirectory.value = initialBackupDirectory
-
+        scope.launch {
             dataStore.data.map { prefs ->
                 prefs[DIR_KEY]
             }.collect { directory ->
