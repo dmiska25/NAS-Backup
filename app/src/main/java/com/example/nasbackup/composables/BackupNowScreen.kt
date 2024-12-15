@@ -23,9 +23,9 @@ fun BackupNowScreen(nav: NavHostController, viewModel: BackupNowViewModel = hilt
     val context = LocalContext.current
 
     val isLoading by viewModel.isLoading.collectAsState()
-    val isConnectionSetupComplete by viewModel.isConnectionSetupComplete.collectAsState()
     val isBackupLocationSelected by viewModel.isBackupLocationSelected.collectAsState()
     val isConnectionTestSuccessful by viewModel.isConnectionTestSuccessful.collectAsState()
+    val isTestingConnection by viewModel.isTestingConnection.collectAsState()
     val showConnectionSetup by viewModel.showConnectionSetup.collectAsState()
     val showBackupLocationSetup by viewModel.showBackupLocationSetup.collectAsState()
     val directories by viewModel.directories.collectAsState()
@@ -48,22 +48,25 @@ fun BackupNowScreen(nav: NavHostController, viewModel: BackupNowViewModel = hilt
             ) {
                 PageHeader(title = "Backup Now", onBack = { nav.navigate(NavRoutes.MAIN_MENU) })
 
+                // Connection Setup: Always allow editing if not loading
                 Button(
                     onClick = { viewModel.showConnectionSetup() },
-                    enabled = !isConnectionSetupComplete,
+                    enabled = !isLoading,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Connection Setup")
                 }
 
+                // Backup Location: Enabled if connection test is successful and not loading
                 Button(
                     onClick = { viewModel.showBackupLocationSetup() },
-                    enabled = isConnectionSetupComplete && !isBackupLocationSelected,
+                    enabled = isConnectionTestSuccessful && !isLoading,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Backup Location")
                 }
 
+                // Backup Now: Enabled if connection is successful, location selected, and not loading
                 Button(
                     onClick = {
                         viewModel.performBackupAsync {
@@ -78,7 +81,7 @@ fun BackupNowScreen(nav: NavHostController, viewModel: BackupNowViewModel = hilt
                             }
                         }
                     },
-                    enabled = isConnectionSetupComplete && isBackupLocationSelected,
+                    enabled = isConnectionTestSuccessful && isBackupLocationSelected && !isLoading,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Backup Now")
@@ -91,10 +94,11 @@ fun BackupNowScreen(nav: NavHostController, viewModel: BackupNowViewModel = hilt
                         usernameInitial = viewModel.username,
                         passwordInitial = viewModel.password,
                         isConnectionTestSuccessful = isConnectionTestSuccessful,
-                        onIpAddressChange = { viewModel.ipAddress = it },
-                        onShareNameChange = { viewModel.shareName = it },
-                        onUsernameChange = { viewModel.username = it },
-                        onPasswordChange = { viewModel.password = it },
+                        isTestingConnection = isTestingConnection,
+                        onIpAddressChange = { viewModel.onIpAddressChange(it) },
+                        onShareNameChange = { viewModel.onShareNameChange(it) },
+                        onUsernameChange = { viewModel.onUsernameChange(it) },
+                        onPasswordChange = { viewModel.onPasswordChange(it) },
                         onTestConnection = { viewModel.testConnection() },
                         onConfirm = { viewModel.confirmConnection() }
                     )
@@ -120,6 +124,7 @@ private fun ConnectionSetupUI(
     usernameInitial: String,
     passwordInitial: String,
     isConnectionTestSuccessful: Boolean,
+    isTestingConnection: Boolean,
     onIpAddressChange: (String) -> Unit,
     onShareNameChange: (String) -> Unit,
     onUsernameChange: (String) -> Unit,
@@ -153,8 +158,16 @@ private fun ConnectionSetupUI(
             onPasswordChange(it)
         }
 
-        Button(onClick = onTestConnection, modifier = Modifier.fillMaxWidth()) {
-            Text("Test Connection")
+        Button(
+            onClick = onTestConnection,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !isTestingConnection
+        ) {
+            if (!isTestingConnection) {
+                Text("Test Connection")
+            } else {
+                CircularProgressIndicator()
+            }
         }
 
         Button(

@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 
 @HiltViewModel
@@ -29,6 +30,9 @@ class BackupNowViewModel @Inject constructor(
 
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading
+
+    private val _isTestingConnection = MutableStateFlow(false)
+    val isTestingConnection: StateFlow<Boolean> = _isTestingConnection
 
     private val _isConnectionSetupComplete = MutableStateFlow(false)
     val isConnectionSetupComplete: StateFlow<Boolean> = _isConnectionSetupComplete
@@ -152,6 +156,26 @@ class BackupNowViewModel @Inject constructor(
         return SmbFile(path, authContext)
     }
 
+    fun onIpAddressChange(ip: String) {
+        ipAddress = ip
+        _isConnectionTestSuccessful.value = false
+    }
+
+    fun onShareNameChange(share: String) {
+        shareName = share
+        _isConnectionTestSuccessful.value = false
+    }
+
+    fun onUsernameChange(user: String) {
+        username = user
+        _isConnectionTestSuccessful.value = false
+    }
+
+    fun onPasswordChange(pass: String) {
+        password = pass
+        _isConnectionTestSuccessful.value = false
+    }
+
     fun showConnectionSetup() {
         if (!_isLoading.value) {
             _showConnectionSetup.value = true
@@ -165,13 +189,36 @@ class BackupNowViewModel @Inject constructor(
     }
 
     fun testConnection() {
+        if (isTestingConnection.value) {
+            return
+        }
+
+        _isConnectionTestSuccessful.value = false
+        _isTestingConnection.value = true
+
         viewModelScope.launch(Dispatchers.IO) {
             val success =
                 testSMBConnection(ipAddress, shareName, username, password) { rootDirectory ->
-                    _currentDirectory.value = rootDirectory
-                    _directories.value = rootDirectory?.listFiles()?.toList() ?: emptyList()
+
+                    // Re-verify backup directory if previously selected
+                    val savedDir = backupNowStateManager.savedBackupDirectory.value
+                    runBlocking {
+                        if (!savedDir.isNullOrEmpty()) {
+                            val directoryValid = verifyBackupDirectory(savedDir)
+                            if (!directoryValid) {
+                                // Invalidate the previously selected directory
+                                backupNowStateManager.persistBackupDirectory("")
+                                _isBackupLocationSelected.value = false
+                            }
+                        }
+
+                        _currentDirectory.value = rootDirectory
+                        _directories.value = rootDirectory?.listFiles()?.toList() ?: emptyList()
+                    }
                 }
+
             _isConnectionTestSuccessful.value = success
+            _isTestingConnection.value = false
         }
     }
 
