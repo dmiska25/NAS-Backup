@@ -158,22 +158,28 @@ class BackupNowViewModel @Inject constructor(
 
     fun onIpAddressChange(ip: String) {
         ipAddress = ip
-        _isConnectionTestSuccessful.value = false
+        onConnectionValueChange()
     }
 
     fun onShareNameChange(share: String) {
         shareName = share
-        _isConnectionTestSuccessful.value = false
+        onConnectionValueChange()
     }
 
     fun onUsernameChange(user: String) {
         username = user
-        _isConnectionTestSuccessful.value = false
+        onConnectionValueChange()
     }
 
     fun onPasswordChange(pass: String) {
         password = pass
+        onConnectionValueChange()
+    }
+
+    fun onConnectionValueChange() {
         _isConnectionTestSuccessful.value = false
+        _isBackupLocationSelected.value = false
+        _currentDirectory.value = null
     }
 
     fun showConnectionSetup() {
