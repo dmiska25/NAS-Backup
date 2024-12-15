@@ -177,14 +177,26 @@ class BackupNowViewModel @Inject constructor(
     }
 
     fun showConnectionSetup() {
+        if (_showConnectionSetup.value) {
+            _showConnectionSetup.value = false
+            return
+        }
+
         if (!_isLoading.value) {
             _showConnectionSetup.value = true
+            _showBackupLocationSetup.value = false // collapse backup location form
         }
     }
 
     fun showBackupLocationSetup() {
-        if (!_isLoading.value) {
+        if (_showBackupLocationSetup.value) {
+            _showBackupLocationSetup.value = false
+            return
+        }
+
+        if (!_isLoading.value && _isConnectionTestSuccessful.value) {
             _showBackupLocationSetup.value = true
+            _showConnectionSetup.value = false // collapse connection setup form
         }
     }
 
@@ -225,8 +237,7 @@ class BackupNowViewModel @Inject constructor(
     fun confirmConnection() {
         if (_isConnectionTestSuccessful.value) {
             _isConnectionSetupComplete.value = true
-            _showConnectionSetup.value = false
-            // Persist credentials
+            _showConnectionSetup.value = false // collapse the connection form
             viewModelScope.launch {
                 backupNowStateManager.persistCredentials(ipAddress, shareName, username, password)
             }
@@ -235,7 +246,7 @@ class BackupNowViewModel @Inject constructor(
 
     fun confirmBackupLocation() {
         _isBackupLocationSelected.value = true
-        _showBackupLocationSetup.value = false
+        _showBackupLocationSetup.value = false // collapse the backup location form
         val currentDirectorySnapshot = _currentDirectory.value
         if (currentDirectorySnapshot != null) {
             viewModelScope.launch {

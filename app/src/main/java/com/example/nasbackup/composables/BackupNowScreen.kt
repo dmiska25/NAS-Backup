@@ -81,7 +81,12 @@ fun BackupNowScreen(nav: NavHostController, viewModel: BackupNowViewModel = hilt
                             }
                         }
                     },
-                    enabled = isConnectionTestSuccessful && isBackupLocationSelected && !isLoading,
+                    enabled = isConnectionTestSuccessful &&
+                        isBackupLocationSelected &&
+                        !isLoading &&
+                        !isTestingConnection &&
+                        !showConnectionSetup &&
+                        !showBackupLocationSetup,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Backup Now")
@@ -102,9 +107,7 @@ fun BackupNowScreen(nav: NavHostController, viewModel: BackupNowViewModel = hilt
                         onTestConnection = { viewModel.testConnection() },
                         onConfirm = { viewModel.confirmConnection() }
                     )
-                }
-
-                if (showBackupLocationSetup) {
+                } else if (showBackupLocationSetup) {
                     BackupLocationSelectionUI(
                         directories = directories,
                         onNavigateToDirectory = { viewModel.navigateToDirectory(it) },
