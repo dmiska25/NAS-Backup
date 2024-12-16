@@ -205,6 +205,8 @@ private fun BackupLocationSelectionUI(
     viewModel: BackupNowViewModel = hiltViewModel()
 ) {
     var isLoading by remember { mutableStateOf(false) }
+    var showNewFolderInput by remember { mutableStateOf(false) }
+    var newFolderName by remember { mutableStateOf("") }
 
     Column(
         verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -212,21 +214,68 @@ private fun BackupLocationSelectionUI(
     ) {
         Text("Select Backup Location")
 
+        if (viewModel.allowedToNavigateUp()) {
+            Button(
+                onClick = {
+                    isLoading = true
+                    viewModel.navigateUpDirectory {
+                        isLoading = false
+                    }
+                },
+                enabled = !isLoading
+            ) {
+                Text("Go Up")
+            }
+        }
+
+        // Button to show/hide new folder input
+        Button(onClick = { showNewFolderInput = !showNewFolderInput }) {
+            Text(if (!showNewFolderInput) "New Folder" else "Cancel")
+        }
+
+        // If showing new folder input, display a text field and a create button
+        if (showNewFolderInput) {
+            TextFieldWithLabel(label = "Folder Name", value = newFolderName) {
+                newFolderName = it
+            }
+            Button(
+                onClick = {
+                    if (newFolderName.isNotBlank()) {
+                        isLoading = true
+                        viewModel.createNewFolder(newFolderName) {
+                            // Folder created or failed, either way reset input and reload directory
+                            isLoading = false
+                            newFolderName = ""
+                            showNewFolderInput = false
+                        }
+                    }
+                },
+                enabled = !isLoading && newFolderName.isNotBlank()
+            ) {
+                Text("Create Folder")
+            }
+        }
+
         LazyColumn {
             items(directories) { dir ->
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable {
-                            isLoading = true
-                            try {
-                                viewModel.isDirectoryAsync(dir, onIsTrue = {
-                                    onNavigateToDirectory(dir)
-                                })
-                            } catch (e: Exception) {
-                                e.printStackTrace()
-                            } finally {
-                                isLoading = false
+                            if (!isLoading) {
+                                isLoading = true
+                                try {
+                                    viewModel.isDirectoryAsync(dir, onIsTrue = {
+                                        onNavigateToDirectory(dir)
+                                        isLoading = false
+                                    }, onIsFalse = {
+                                        // If it's not a directory, we do nothing
+                                        isLoading = false
+                                    })
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                    isLoading = false
+                                }
                             }
                         }
                         .padding(8.dp),

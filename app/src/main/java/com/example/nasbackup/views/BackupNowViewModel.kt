@@ -58,6 +58,9 @@ class BackupNowViewModel @Inject constructor(
     private val _directories = MutableStateFlow<List<SmbFile>>(emptyList())
     val directories: StateFlow<List<SmbFile>> = _directories
 
+    private val _initialDirectory = MutableStateFlow<SmbFile?>(null)
+    val initialDirectory: StateFlow<SmbFile?> = _initialDirectory
+
     // Credentials stored in memory
     var ipAddress: String = ""
     var shareName: String = ""
@@ -104,6 +107,11 @@ class BackupNowViewModel @Inject constructor(
             ) { rootDirectory ->
                 _currentDirectory.value = rootDirectory
                 _directories.value = rootDirectory?.listFiles()?.toList() ?: emptyList()
+
+                // Set initial directory if not set
+                if (_initialDirectory.value == null && rootDirectory != null) {
+                    _initialDirectory.value = rootDirectory
+                }
             }
 
             if (connectionSuccess) {
@@ -268,6 +276,55 @@ class BackupNowViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             _currentDirectory.value = directory
             _directories.value = directory.listFiles()?.toList() ?: emptyList()
+        }
+    }
+
+    fun navigateUpDirectory(onComplete: () -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            if (allowedToNavigateUp()) {
+                goUpDirectory()
+            }
+            withContext(Dispatchers.Main) { onComplete() }
+        }
+    }
+
+    fun allowedToNavigateUp(): Boolean {
+        val currentDir = _currentDirectory.value
+        val initialDir = _initialDirectory.value
+        if (currentDir?.parent != null && initialDir != null && currentDir != initialDir) {
+            return true
+        }
+        return false
+    }
+
+    private fun goUpDirectory() {
+        val currentDir = _currentDirectory.value ?: return
+        val parentPath = currentDir.parent ?: return
+        val parentDir = createSmbFile(parentPath)
+        if (parentDir.exists() && parentDir.isDirectory) {
+            _currentDirectory.value = parentDir
+            _directories.value = parentDir.listFiles()?.toList() ?: emptyList()
+        }
+    }
+
+    fun createNewFolder(folderName: String, onComplete: () -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val currentDir = _currentDirectory.value
+            if (currentDir != null && currentDir.isDirectory) {
+                val newDirPath = currentDir.canonicalPath + folderName.trimEnd('/') + "/"
+                try {
+                    val newDir = createSmbFile(newDirPath)
+                    if (!newDir.exists()) {
+                        newDir.mkdir() // Create the new directory
+                    }
+                    // Refresh directory listing
+                    _directories.value = currentDir.listFiles()?.toList() ?: emptyList()
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    // Could show a toast or some form of error handling here
+                }
+            }
+            withContext(Dispatchers.Main) { onComplete() }
         }
     }
 
