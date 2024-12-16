@@ -61,6 +61,9 @@ class BackupNowViewModel @Inject constructor(
     private val _initialDirectory = MutableStateFlow<SmbFile?>(null)
     val initialDirectory: StateFlow<SmbFile?> = _initialDirectory
 
+    private val _selectedBackupDirectory = MutableStateFlow<SmbFile?>(null)
+    val selectedBackupDirectory: StateFlow<SmbFile?> = _selectedBackupDirectory
+
     // Credentials stored in memory
     var ipAddress: String = ""
     var shareName: String = ""
@@ -92,13 +95,11 @@ class BackupNowViewModel @Inject constructor(
 
     private suspend fun handleInitialState(creds: SmbCredentials?, savedDir: String?) {
         if (creds != null) {
-            // Load credentials into memory
             ipAddress = creds.ipAddress
             shareName = creds.shareName
             username = creds.username
             password = creds.password
 
-            // Test connection silently
             val connectionSuccess = testSMBConnection(
                 creds.ipAddress,
                 creds.shareName,
@@ -107,8 +108,6 @@ class BackupNowViewModel @Inject constructor(
             ) { rootDirectory ->
                 _currentDirectory.value = rootDirectory
                 _directories.value = rootDirectory?.listFiles()?.toList() ?: emptyList()
-
-                // Set initial directory if not set
                 if (_initialDirectory.value == null && rootDirectory != null) {
                     _initialDirectory.value = rootDirectory
                 }
@@ -118,12 +117,16 @@ class BackupNowViewModel @Inject constructor(
                 _isConnectionTestSuccessful.value = true
                 _isConnectionSetupComplete.value = true
 
-                if (savedDir != null && savedDir.isNotBlank()) {
+                // If we have a saved directory, verify and if valid, set as selected directory
+                if (!savedDir.isNullOrBlank()) {
                     val directoryValid = verifyBackupDirectory(savedDir)
                     if (directoryValid) {
+                        val savedFile = createSmbFile(savedDir)
+                        _selectedBackupDirectory.value = savedFile
                         _isBackupLocationSelected.value = true
+                        // We may want to navigate currentDirectory to the selected one so user sees it
+                        navigateToDirectory(savedFile)
                     } else {
-                        // Directory no longer valid; remove from disk
                         backupNowStateManager.persistBackupDirectory("")
                         _isBackupLocationSelected.value = false
                     }
@@ -134,12 +137,11 @@ class BackupNowViewModel @Inject constructor(
                 _isConnectionSetupComplete.value = false
             }
         } else {
-            // No credentials saved, so start fresh
+            // No credentials saved
             _isConnectionTestSuccessful.value = false
             _isConnectionSetupComplete.value = false
         }
 
-        // Done loading initial state
         _isLoading.value = false
     }
 
@@ -189,8 +191,10 @@ class BackupNowViewModel @Inject constructor(
 
     fun onConnectionValueChange() {
         _isConnectionTestSuccessful.value = false
+        _isConnectionSetupComplete.value = false
         _isBackupLocationSelected.value = false
         _currentDirectory.value = null
+        _selectedBackupDirectory.value = null
     }
 
     fun showConnectionSetup() {
@@ -262,12 +266,14 @@ class BackupNowViewModel @Inject constructor(
     }
 
     fun confirmBackupLocation() {
-        _isBackupLocationSelected.value = true
-        _showBackupLocationSetup.value = false // collapse the backup location form
-        val currentDirectorySnapshot = _currentDirectory.value
-        if (currentDirectorySnapshot != null) {
+        val dirToConfirm = _currentDirectory.value
+        if (dirToConfirm != null) {
+            // Set this directory as the selected/confirmed backup directory
+            _selectedBackupDirectory.value = dirToConfirm
+            _isBackupLocationSelected.value = true
+            _showBackupLocationSetup.value = false
             viewModelScope.launch {
-                backupNowStateManager.persistBackupDirectory(currentDirectorySnapshot.canonicalPath)
+                backupNowStateManager.persistBackupDirectory(dirToConfirm.canonicalPath)
             }
         }
     }
@@ -329,10 +335,8 @@ class BackupNowViewModel @Inject constructor(
     }
 
     fun performBackupAsync(onComplete: (Boolean) -> Unit) {
-        if (_isBackingUp.value) {
-            return
-        }
-        val dir = _currentDirectory.value ?: return
+        if (_isBackingUp.value) return
+        val dir = _selectedBackupDirectory.value ?: return
         _isBackingUp.value = true
         backupManager.performBackupAsync(dir) { success ->
             if (success) {

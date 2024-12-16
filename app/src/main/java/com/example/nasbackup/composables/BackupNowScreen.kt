@@ -125,8 +125,11 @@ fun BackupNowScreen(nav: NavHostController, viewModel: BackupNowViewModel = hilt
                 if (!viewModel.ipAddress.isBlank()) {
                     Text("IP Address: ${viewModel.ipAddress}")
                 }
-                if (currentDirectory != null) {
-                    Text("Selected Directory: ${currentDirectory!!.canonicalPath}")
+                if (viewModel.selectedBackupDirectory.value != null) {
+                    val dir = viewModel.selectedBackupDirectory.value!!.canonicalPath
+                    Text(
+                        "Selected Directory: $dir"
+                    )
                 }
             }
         }
