@@ -6,50 +6,63 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import jcifs.smb.SmbFile
 import jcifs.smb.SmbFileOutputStream
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 @Singleton
-class BackupManager @Inject constructor(
-    private val fileSelectionStateManager: FileSelectionStateManager
-) {
-    /**
-     * Perform backup operation on a separate thread using coroutines.
-     */
-    fun performBackupAsync(nasDirectory: SmbFile, onComplete: (Boolean) -> Unit) {
-        CoroutineScope(Dispatchers.IO).launch {
-            val success = performBackup(nasDirectory)
-            withContext(Dispatchers.Main) {
-                onComplete(success)
-            }
-        }
-    }
+class BackupManager @Inject constructor() {
 
     /**
-     * Synchronous backup logic (called internally by performBackupAsync).
+     * Performs a backup while preserving the original file structure under the "BackupNow" folder.
+     *
+     * 1) Creates or ensures the "BackupNow" folder on the NAS.
+     * 2) Recursively discovers files from [fileSelection], building an indexed list of (File, relativePath).
+     * 3) Copies each file in order, creating subdirectories on the NAS as needed.
+     * 4) Calls [onProgress] after each file is copied.
      */
-    private fun performBackup(nasDirectory: SmbFile): Boolean {
+    fun performBackupWithProgress(
+        destinationRoot: SmbFile,
+        fileSelection: Set<String>,
+        onProgress: (fileIndex: Int, totalFiles: Int) -> Unit
+    ): Boolean {
         return try {
-            val selectedFiles = fileSelectionStateManager.selectedFiles.value
-            if (selectedFiles.isEmpty()) {
-                return false
-            }
+            if (fileSelection.isEmpty()) return false
 
-            // Create the "BackupNow" folder on the NAS
-            val uri = "${nasDirectory.canonicalPath}/BackupNow/"
-            val backupNowFolder = SmbFile(uri, nasDirectory.context)
+            // 1) Ensure the "BackupNow+timestamp" folder on the NAS
+            val timestamp = System.currentTimeMillis()
+            val backupNowPath = "${destinationRoot.canonicalPath}/BackupNow_$timestamp/"
+            val backupNowFolder = SmbFile(backupNowPath, destinationRoot.context)
             if (!backupNowFolder.exists()) {
                 backupNowFolder.mkdirs()
             }
 
-            // Iterate through each selected file/directory and copy it to the NAS
-            for (file in selectedFiles) {
-                val localFile = File(file)
+            // 1.1) Ensure the "files" folder inside the "BackupNow" folder
+            val filesFolder =
+                SmbFile("${backupNowFolder.canonicalPath}/files/", backupNowFolder.context)
+            if (!filesFolder.exists()) {
+                filesFolder.mkdirs()
+            }
+
+            // 2) Recursively gather all local files, along with their relative paths
+            val indexedFiles = mutableListOf<IndexedFile>()
+            for (sourcePath in fileSelection) {
+                val localFile = File(sourcePath)
                 if (localFile.exists()) {
-                    copyToNas(localFile, backupNowFolder)
+                    discoverAllFiles(
+                        localFile,
+                        localFile.parentFile?.absolutePath ?: "",
+                        indexedFiles
+                    )
                 }
+            }
+
+            val totalFiles = indexedFiles.size
+            if (totalFiles == 0) return false
+
+            // 3) Copy each file, preserving subfolder structure
+            var index = 0
+            for (indexedFile in indexedFiles) {
+                index++
+                onProgress(index, totalFiles)
+                copyToNas(indexedFile, filesFolder)
             }
 
             println("Backup completed successfully.")
@@ -61,31 +74,90 @@ class BackupManager @Inject constructor(
         }
     }
 
-    private fun copyToNas(localFile: File, nasDirectory: SmbFile) {
-        try {
-            if (localFile.isDirectory) {
-                // Recursively copy directory
-                val uri = "${nasDirectory.canonicalPath}${localFile.name}"
-                val targetDir = SmbFile(uri, nasDirectory.context) // Use the parent's context
-
-                targetDir.mkdirs()
-                localFile.listFiles()?.forEach { child ->
-                    copyToNas(child, targetDir) // Pass the correct context
-                }
-            } else {
-                // Copy individual file
-                val targetFile =
-                    SmbFile("${nasDirectory.canonicalPath}/${localFile.name}", nasDirectory.context)
-                FileInputStream(localFile).use { input ->
-                    SmbFileOutputStream(targetFile).use { output ->
-                        input.copyTo(output)
-                    }
-                }
-                println("Copied ${localFile.name} to ${targetFile.canonicalPath}")
+    /**
+     * Recursively discovers all files in [root]. For each file:
+     * - [root]'s parent is used as the "basePath" to compute a relative path.
+     * - Store (file, relativePath) in [outIndexedFiles].
+     *
+     * @param root A file or directory to discover
+     * @param basePath The absolute path of the top-level folder (used to compute relative paths)
+     */
+    private fun discoverAllFiles(
+        root: File,
+        basePath: String,
+        outIndexedFiles: MutableList<IndexedFile>
+    ) {
+        if (root.isDirectory) {
+            val files = root.listFiles() ?: return
+            for (child in files) {
+                discoverAllFiles(child, basePath, outIndexedFiles)
             }
-        } catch (e: Exception) {
-            e.printStackTrace()
-            println("Failed to copy ${localFile.name}: ${e.message}")
+        } else {
+            // Compute relative path by subtracting basePath from the file's parent
+            val parentPath = root.parentFile?.absolutePath ?: basePath
+            val relativeDir = if (parentPath.startsWith(basePath)) {
+                parentPath.removePrefix(basePath)
+            } else {
+                parentPath
+            }
+
+            // e.g. for a file /User/Photos/IMG_001.jpg
+            // basePath = /User/Photos
+            // relativeDir = "" (empty) if same folder, or /Subfolder
+            outIndexedFiles.add(
+                IndexedFile(
+                    localFile = root,
+                    relativeDir = relativeDir.trimStart(File.separatorChar)
+                )
+            )
         }
     }
+
+    /**
+     * Copies [indexedFile] to the NAS [backupNowFolder], recreating the subfolder structure.
+     *
+     * e.g., if relativeDir = "Some/Folder", then we create "BackupNow/Some/Folder/" before copying.
+     */
+    private fun copyToNas(indexedFile: IndexedFile, backupNowFolder: SmbFile) {
+        try {
+            // 1) Build the nested NAS directory
+            val finalDirectory = if (indexedFile.relativeDir.isNotBlank()) {
+                val subPath = backupNowFolder.canonicalPath +
+                    indexedFile.relativeDir.trimStart('/') +
+                    "/"
+                // e.g. "smb://server/share/BackupNow/Some/Folder/"
+                val subDir = SmbFile(subPath, backupNowFolder.context)
+                if (!subDir.exists()) {
+                    subDir.mkdirs()
+                }
+                subDir
+            } else {
+                backupNowFolder
+            }
+
+            // 2) Copy file
+            val targetFile = SmbFile(
+                finalDirectory.canonicalPath + indexedFile.localFile.name,
+                finalDirectory.context
+            )
+            FileInputStream(indexedFile.localFile).use { input ->
+                SmbFileOutputStream(targetFile).use { output ->
+                    input.copyTo(output)
+                }
+            }
+            println("Copied ${indexedFile.localFile.absolutePath} to ${targetFile.canonicalPath}")
+        } catch (e: Exception) {
+            e.printStackTrace()
+            println("Failed to copy ${indexedFile.localFile.name}: ${e.message}")
+        }
+    }
+
+    /**
+     * Represents a local file along with a relative folder path that needs to be replicated in the backup.
+     * e.g., localFile = /User/Photos/Subfolder/IMG_001.jpg, relativeDir = "Subfolder"
+     */
+    data class IndexedFile(
+        val localFile: File,
+        val relativeDir: String
+    )
 }

@@ -1,17 +1,16 @@
 package com.example.nasbackup.views
 
+import android.content.Context
+import android.content.Intent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.nasbackup.datastore.BackupManager
 import com.example.nasbackup.datastore.BackupNowStateManager
+import com.example.nasbackup.datastore.FileSelectionStateManager
 import com.example.nasbackup.datastore.SmbCredentials
+import com.example.nasbackup.domain.SmbFileContext
+import com.example.nasbackup.service.BackupForegroundService
 import dagger.hilt.android.lifecycle.HiltViewModel
-import java.util.Properties
 import javax.inject.Inject
-import jcifs.CIFSContext
-import jcifs.config.PropertyConfiguration
-import jcifs.context.BaseContext
-import jcifs.smb.NtlmPasswordAuthenticator
 import jcifs.smb.SmbFile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,10 +23,9 @@ import kotlinx.coroutines.withContext
 
 @HiltViewModel
 class BackupNowViewModel @Inject constructor(
-    private val backupManager: BackupManager,
-    private val backupNowStateManager: BackupNowStateManager
+    private val backupNowStateManager: BackupNowStateManager,
+    private val fileSelectionStateManager: FileSelectionStateManager
 ) : ViewModel() {
-
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading
 
@@ -73,7 +71,6 @@ class BackupNowViewModel @Inject constructor(
     private var initialSetupDone = false
 
     init {
-        // Wait until BackupNowStateManager emits its initial values for credentials and directory
         viewModelScope.launch(Dispatchers.IO) {
             combine(
                 backupNowStateManager.savedCredentials,
@@ -81,13 +78,9 @@ class BackupNowViewModel @Inject constructor(
             ) { credentials, directory ->
                 credentials to directory
             }.collectLatest { (creds, savedDir) ->
-                // The state manager has loaded something (creds might be null if not saved before)
                 if (!initialSetupDone) {
                     handleInitialState(creds, savedDir)
                     initialSetupDone = true
-                } else {
-                    // If you want to handle changes after the initial load, you can do so here.
-                    // For example, if creds or savedDir change again due to other actions.
                 }
             }
         }
@@ -100,12 +93,7 @@ class BackupNowViewModel @Inject constructor(
             username = creds.username
             password = creds.password
 
-            val connectionSuccess = testSMBConnection(
-                creds.ipAddress,
-                creds.shareName,
-                creds.username,
-                creds.password
-            ) { rootDirectory ->
+            val connectionSuccess = testSMBConnection(createSmbFile(null)) { rootDirectory ->
                 _currentDirectory.value = rootDirectory
                 _directories.value = rootDirectory?.listFiles()?.toList() ?: emptyList()
                 if (_initialDirectory.value == null && rootDirectory != null) {
@@ -156,18 +144,15 @@ class BackupNowViewModel @Inject constructor(
         }
     }
 
-    private fun createSmbFile(path: String): SmbFile {
-        val properties = Properties().apply {
-            put("jcifs.smb.client.minVersion", "SMB202")
-            put("jcifs.smb.client.maxVersion", "SMB311")
-        }
-        val config = PropertyConfiguration(properties)
-        val baseContext: CIFSContext = BaseContext(config)
-        val authContext = baseContext.withCredentials(
-            NtlmPasswordAuthenticator("", username, password)
-        )
-        return SmbFile(path, authContext)
-    }
+    private fun createSmbFile(path: String?): SmbFile = createSmbFileContext(path).toSmbFile()
+
+    private fun createSmbFileContext(path: String?): SmbFileContext = SmbFileContext(
+        ipAddress = ipAddress,
+        shareName = shareName,
+        username = username,
+        password = password,
+        route = path
+    )
 
     fun onIpAddressChange(ip: String) {
         ipAddress = ip
@@ -231,8 +216,7 @@ class BackupNowViewModel @Inject constructor(
 
         viewModelScope.launch(Dispatchers.IO) {
             val success =
-                testSMBConnection(ipAddress, shareName, username, password) { rootDirectory ->
-
+                testSMBConnection(createSmbFile(null)) { rootDirectory ->
                     // Re-verify backup directory if previously selected
                     val savedDir = backupNowStateManager.savedBackupDirectory.value
                     runBlocking {
@@ -266,14 +250,13 @@ class BackupNowViewModel @Inject constructor(
     }
 
     fun confirmBackupLocation() {
-        val dirToConfirm = _currentDirectory.value
-        if (dirToConfirm != null) {
+        _currentDirectory.value?.let {
             // Set this directory as the selected/confirmed backup directory
-            _selectedBackupDirectory.value = dirToConfirm
+            _selectedBackupDirectory.value = it
             _isBackupLocationSelected.value = true
             _showBackupLocationSetup.value = false
             viewModelScope.launch {
-                backupNowStateManager.persistBackupDirectory(dirToConfirm.canonicalPath)
+                backupNowStateManager.persistBackupDirectory(it.canonicalPath)
             }
         }
     }
@@ -334,25 +317,23 @@ class BackupNowViewModel @Inject constructor(
         }
     }
 
-    fun performBackupAsync(onComplete: (Boolean) -> Unit) {
-        if (_isBackingUp.value) return
-        val dir = _selectedBackupDirectory.value ?: return
-        _isBackingUp.value = true
-        backupManager.performBackupAsync(dir) { success ->
-            if (success) {
-                viewModelScope.launch {
-                    backupNowStateManager.persistCredentials(
-                        ipAddress,
-                        shareName,
-                        username,
-                        password
-                    )
-                    backupNowStateManager.persistBackupDirectory(dir.canonicalPath)
-                }
-            }
-            onComplete(success)
-            _isBackingUp.value = false
+    fun performBackupViaService(context: Context) {
+        val encodedDir = createSmbFileContext(
+            path = _selectedBackupDirectory.value?.canonicalPath
+        ).toJson()
+
+        // Build the intent
+        val intent = Intent(context, BackupForegroundService::class.java).apply {
+            action = BackupForegroundService.ACTION_START_BACKUP
+            putExtra(BackupForegroundService.EXTRA_SMB_PATH, encodedDir)
+            putExtra(
+                BackupForegroundService.EXTRA_FILE_SELECTION,
+                fileSelectionStateManager.selectedFiles.value.toTypedArray()
+            )
         }
+
+        // Start the service in the foreground
+        context.startForegroundService(intent)
     }
 
     fun isDirectoryAsync(
@@ -369,26 +350,11 @@ class BackupNowViewModel @Inject constructor(
     }
 
     private suspend fun testSMBConnection(
-        ipAddress: String,
-        shareName: String,
-        username: String,
-        password: String,
+        smbFile: SmbFile,
         onSuccess: (SmbFile?) -> Unit
     ): Boolean {
         return withContext(Dispatchers.IO) {
             try {
-                val smbUrl = "smb://$ipAddress/$shareName/"
-                val properties = Properties().apply {
-                    put("jcifs.smb.client.minVersion", "SMB202")
-                    put("jcifs.smb.client.maxVersion", "SMB311")
-                }
-                val config = PropertyConfiguration(properties)
-                val baseContext: CIFSContext = BaseContext(config)
-                val authContext = baseContext.withCredentials(
-                    NtlmPasswordAuthenticator("", username, password)
-                )
-                val smbFile = SmbFile(smbUrl, authContext)
-
                 if (smbFile.exists()) {
                     onSuccess(smbFile)
                     true

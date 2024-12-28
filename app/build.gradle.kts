@@ -62,6 +62,7 @@ dependencies {
 
     // FIle transfer
     implementation(libs.jcifs)
+    implementation(libs.jackson.module.kotlin)
 
     // androidx Dependencies
     implementation(libs.androidx.core.ktx)
