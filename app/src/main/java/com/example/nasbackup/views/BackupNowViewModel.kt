@@ -9,6 +9,7 @@ import com.example.nasbackup.datastore.FileSelectionStateManager
 import com.example.nasbackup.datastore.SmbCredentials
 import com.example.nasbackup.domain.SmbFileContext
 import com.example.nasbackup.service.BackupForegroundService
+import com.fasterxml.jackson.databind.ObjectMapper
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import jcifs.smb.SmbFile
@@ -26,6 +27,10 @@ class BackupNowViewModel @Inject constructor(
     private val backupNowStateManager: BackupNowStateManager,
     private val fileSelectionStateManager: FileSelectionStateManager
 ) : ViewModel() {
+    companion object {
+        val mapper = ObjectMapper()
+    }
+
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading
 
@@ -328,7 +333,7 @@ class BackupNowViewModel @Inject constructor(
             putExtra(BackupForegroundService.EXTRA_SMB_PATH, encodedDir)
             putExtra(
                 BackupForegroundService.EXTRA_FILE_SELECTION,
-                fileSelectionStateManager.selectedFiles.value.toTypedArray()
+                mapper.writeValueAsString(fileSelectionStateManager.selectedFiles.value)
             )
         }
 

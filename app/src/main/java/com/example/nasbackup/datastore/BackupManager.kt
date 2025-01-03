@@ -1,5 +1,10 @@
 package com.example.nasbackup.datastore
 
+import com.example.nasbackup.dao.BackupJobDao
+import com.example.nasbackup.domain.SmbFileContext
+import com.example.nasbackup.entity.BackupJob
+import com.example.nasbackup.exception.FileNoLongerExistsException
+import com.fasterxml.jackson.databind.ObjectMapper
 import java.io.File
 import java.io.FileInputStream
 import javax.inject.Inject
@@ -8,27 +13,32 @@ import jcifs.smb.SmbFile
 import jcifs.smb.SmbFileOutputStream
 
 @Singleton
-class BackupManager @Inject constructor() {
+class BackupManager @Inject constructor(
+    private val backupJobDao: BackupJobDao
+) {
+    companion object {
+        val mapper = ObjectMapper()
+    }
 
     /**
      * Performs a backup while preserving the original file structure under the "BackupNow" folder.
      *
      * 1) Creates or ensures the "BackupNow" folder on the NAS.
-     * 2) Recursively discovers files from [fileSelection], building an indexed list of (File, relativePath).
+     * 2) Recursively discovers files from fileSelection, building an indexed list of (File, relativePath).
      * 3) Copies each file in order, creating subdirectories on the NAS as needed.
-     * 4) Calls [onProgress] after each file is copied.
+     * 4) Calls [onProgress] after each file is copied and returns null for totalFiles if scanning.
      */
     fun performBackupWithProgress(
-        destinationRoot: SmbFile,
-        fileSelection: Set<String>,
-        onProgress: (fileIndex: Int, totalFiles: Int) -> Unit
+        job: BackupJob,
+        onProgress: (fileIndex: Int, totalFiles: Int?) -> Unit
     ): Boolean {
         return try {
+            val destinationRoot = SmbFileContext.fromJson(job.smbFileContext).toSmbFile()
+            val fileSelection = mapper.readValue(job.fileSelection, Set::class.java) as Set<String>
             if (fileSelection.isEmpty()) return false
 
             // 1) Ensure the "BackupNow+timestamp" folder on the NAS
-            val timestamp = System.currentTimeMillis()
-            val backupNowPath = "${destinationRoot.canonicalPath}/BackupNow_$timestamp/"
+            val backupNowPath = "${destinationRoot.canonicalPath}/BackupNow_${job.createdAt}/"
             val backupNowFolder = SmbFile(backupNowPath, destinationRoot.context)
             if (!backupNowFolder.exists()) {
                 backupNowFolder.mkdirs()
@@ -43,32 +53,55 @@ class BackupManager @Inject constructor() {
 
             // 2) Recursively gather all local files, along with their relative paths
             val indexedFiles = mutableListOf<IndexedFile>()
-            for (sourcePath in fileSelection) {
-                val localFile = File(sourcePath)
-                if (localFile.exists()) {
-                    discoverAllFiles(
-                        localFile,
-                        localFile.parentFile?.absolutePath ?: "",
-                        indexedFiles
-                    )
-                }
-            }
+            if (job.foundFiles != null) {
+                indexedFiles.addAll(
+                    mapper.readValue(job.foundFiles, List::class.java) as List<IndexedFile>
+                )
+            } else {
+                backupJobDao.insertOrUpdate(job.copy(state = "STARTING"))
+                onProgress(0, null)
 
-            val totalFiles = indexedFiles.size
-            if (totalFiles == 0) return false
+                for (sourcePath in fileSelection) {
+                    val localFile = File(sourcePath)
+                    if (localFile.exists()) {
+                        discoverAllFiles(
+                            localFile,
+                            localFile.parentFile?.absolutePath ?: "",
+                            indexedFiles
+                        )
+                    }
+                }
+
+                if (indexedFiles.size == 0) throw Exception("No files found in the selection.")
+                backupJobDao.insertOrUpdate(
+                    job.copy(
+                        totalFiles = indexedFiles.size,
+                        foundFiles = mapper.writeValueAsString(indexedFiles),
+                        state = "RUNNING"
+                    )
+                )
+            }
 
             // 3) Copy each file, preserving subfolder structure
-            var index = 0
-            for (indexedFile in indexedFiles) {
+            // Note: 1-based indexing here
+            var index = (job.currentFileIndex - 1).coerceAtLeast(0)
+            indexedFiles.subList(index, indexedFiles.size).forEach {
                 index++
-                onProgress(index, totalFiles)
-                copyToNas(indexedFile, filesFolder)
+                backupJobDao.insertOrUpdate(job.copy(currentFileIndex = index))
+                onProgress(index, indexedFiles.size)
+                copyToNas(it, filesFolder)
             }
 
+            backupJobDao.insertOrUpdate(
+                job.copy(state = "COMPLETED", endedAt = System.currentTimeMillis())
+            )
             println("Backup completed successfully.")
             true
         } catch (e: Exception) {
             e.printStackTrace()
+            backupJobDao.insertOrUpdate(
+                job.copy(state = "FAILED", endedAt = System.currentTimeMillis())
+            )
             println("Backup failed: ${e.message}")
             false
         }
@@ -140,12 +173,24 @@ class BackupManager @Inject constructor() {
                 finalDirectory.canonicalPath + indexedFile.localFile.name,
                 finalDirectory.context
             )
+
+            // verify source file exists
+            if (!indexedFile.localFile.exists()) {
+                throw FileNoLongerExistsException(
+                    "File ${indexedFile.localFile.absolutePath} does not exist."
+                )
+            }
+
             FileInputStream(indexedFile.localFile).use { input ->
                 SmbFileOutputStream(targetFile).use { output ->
                     input.copyTo(output)
                 }
             }
             println("Copied ${indexedFile.localFile.absolutePath} to ${targetFile.canonicalPath}")
+        } catch (e: FileNoLongerExistsException) {
+            println(
+                "Skipping file ${indexedFile.localFile.absolutePath} because it no longer exists."
+            )
         } catch (e: Exception) {
             e.printStackTrace()
             println("Failed to copy ${indexedFile.localFile.name}: ${e.message}")
