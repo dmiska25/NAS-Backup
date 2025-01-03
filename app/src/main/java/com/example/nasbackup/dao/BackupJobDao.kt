@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import com.example.nasbackup.entity.BackupJob
+import java.util.UUID
 
 @Dao
 interface BackupJobDao {
@@ -12,7 +13,7 @@ interface BackupJobDao {
     fun insertOrUpdate(backupJob: BackupJob)
 
     @Query("SELECT * FROM BackupJob WHERE jobId = :jobId")
-    fun getJob(jobId: String): BackupJob?
+    fun getJob(jobId: UUID): BackupJob?
 
     @Query(
         "SELECT * FROM BackupJob WHERE smbFileContext = :smbFileContextEncoded " +

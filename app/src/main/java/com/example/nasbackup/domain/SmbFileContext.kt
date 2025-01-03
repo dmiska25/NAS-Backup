@@ -64,7 +64,8 @@ class SmbFileContext {
     fun toSmbFileWithoutRoute(): SmbFile = toSmbFile(false)
 
     private fun toSmbFile(includeRoute: Boolean = true): SmbFile {
-        val smbUrl = "smb://$ipAddress/$shareName/${route ?: ""}"
+        val smbUrl = "smb://$ipAddress/$shareName/" +
+                if (includeRoute && ! route.isNullOrBlank()) route else ""
         val properties = Properties().apply {
             put("jcifs.smb.client.minVersion", "SMB202")
             put("jcifs.smb.client.maxVersion", "SMB311")
