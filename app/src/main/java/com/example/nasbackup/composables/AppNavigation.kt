@@ -11,17 +11,27 @@ import androidx.navigation.navigation
 fun AppNavigation(modifier: Modifier) {
     val navController = rememberNavController()
 
-    NavHost(navController = navController, startDestination = NavRoutes.MAIN_MENU, modifier = modifier) {
+    NavHost(
+        navController = navController,
+        startDestination = NavRoutes.MAIN_MENU,
+        modifier = modifier
+    ) {
         composable(NavRoutes.MAIN_MENU) {
             MainMenuScreen(nav = navController)
         }
-        navigation(startDestination = NavRoutes.CONFIGURATION_MAIN, route = NavRoutes.CONFIGURATION) {
+        navigation(
+            startDestination = NavRoutes.CONFIGURATION_MAIN,
+            route = NavRoutes.CONFIGURATION
+        ) {
             composable(NavRoutes.CONFIGURATION_MAIN) {
                 ConfigurationScreen(nav = navController)
             }
             composable(NavRoutes.CONFIGURATION_SELECT_FILES) {
                 FileSelectionScreen(nav = navController)
             }
+        }
+        composable(NavRoutes.BACKUP_NOW) {
+            BackupNowScreen(nav = navController)
         }
     }
 }
@@ -31,4 +41,5 @@ object NavRoutes {
     const val CONFIGURATION = "CONFIGURATION"
     const val CONFIGURATION_MAIN = "CONFIGURATION_MAIN"
     const val CONFIGURATION_SELECT_FILES = "CONFIGURATION_SELECT_FILES"
+    const val BACKUP_NOW = "BACKUP_NOW"
 }

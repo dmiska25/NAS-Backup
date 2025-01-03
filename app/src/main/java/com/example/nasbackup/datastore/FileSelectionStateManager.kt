@@ -5,6 +5,8 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import com.example.nasbackup.dataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
+import javax.inject.Inject
+import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -13,11 +15,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
-import javax.inject.Inject
-import javax.inject.Singleton
 
 @Singleton
-class FileSelectionStateManager @Inject constructor(@ApplicationContext private val context: Context) {
+class FileSelectionStateManager
+@Inject
+constructor(
+    @ApplicationContext private val context: Context
+) {
     private val dataStore = context.dataStore
 
     // Use StateFlow for reactivity
@@ -29,9 +33,10 @@ class FileSelectionStateManager @Inject constructor(@ApplicationContext private 
     init {
         scope.launch {
             // Fetch initial value from DataStore
-            val initialFiles = dataStore.data
-                .map { preferences -> preferences[SELECTED_FILES_KEY] ?: emptySet() }
-                .first()
+            val initialFiles =
+                dataStore.data
+                    .map { preferences -> preferences[SELECTED_FILES_KEY] ?: emptySet() }
+                    .first()
             _selectedFiles.value = initialFiles
 
             // Observe changes in DataStore and update StateFlow
@@ -54,4 +59,3 @@ class FileSelectionStateManager @Inject constructor(@ApplicationContext private 
         private val SELECTED_FILES_KEY = stringSetPreferencesKey("selected_files")
     }
 }
-

@@ -6,14 +6,15 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.nasbackup.datastore.FileSelectionStateManager
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.launch
 import javax.inject.Inject
+import kotlinx.coroutines.launch
 
 @HiltViewModel
-class FileSelectionViewModel @Inject constructor(
+class FileSelectionViewModel
+@Inject
+constructor(
     private val stateManager: FileSelectionStateManager
 ) : ViewModel() {
-
     // Temporary state for the current session's selection
     private val _tempSelectedFiles = mutableStateOf<Set<String>>(emptySet())
     val tempSelectedFiles: State<Set<String>> = _tempSelectedFiles
@@ -49,4 +50,3 @@ class FileSelectionViewModel @Inject constructor(
         }
     }
 }
-

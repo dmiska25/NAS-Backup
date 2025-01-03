@@ -8,7 +8,9 @@ import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.HiltAndroidApp
 
 // Extension property to create DataStore instance
-val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "file_selection_preferences")
+val Context.dataStore: DataStore<Preferences> by preferencesDataStore(
+    name = "file_selection_preferences"
+)
 
 @HiltAndroidApp
 class NasBackupApplication : Application()

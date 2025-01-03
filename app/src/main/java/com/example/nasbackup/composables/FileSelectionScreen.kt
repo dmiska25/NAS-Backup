@@ -42,7 +42,8 @@ fun FileSelectionScreen(
     val tempSelectedFiles by viewModel.tempSelectedFiles
 
     Column(
-        modifier = Modifier
+        modifier =
+        Modifier
             .fillMaxSize()
             .padding(16.dp)
     ) {
@@ -79,9 +80,14 @@ fun FileSelectionScreen(
                 LazyColumn(modifier = Modifier.weight(3f)) {
                     items(directories) { dir ->
                         Row(
-                            modifier = Modifier
+                            modifier =
+                            Modifier
                                 .fillMaxWidth()
-                                .clickable(enabled = !tempSelectedFiles.contains(dir.absolutePath) && dir.isDirectory) {
+                                .clickable(
+                                    enabled =
+                                    !tempSelectedFiles.contains(dir.absolutePath) &&
+                                        dir.isDirectory
+                                ) {
                                     if (dir.isDirectory) {
                                         currentDirectory = dir
                                         directories = listDirectories(dir)
@@ -95,7 +101,10 @@ fun FileSelectionScreen(
                                     text = dir.name,
                                     style = MaterialTheme.typography.bodyLarge
                                 )
-                                if (dir.isDirectory && !tempSelectedFiles.contains(dir.absolutePath)) {
+                                if (
+                                    dir.isDirectory &&
+                                    !tempSelectedFiles.contains(dir.absolutePath)
+                                ) {
                                     Text(
                                         text = "(Folder)",
                                         style = MaterialTheme.typography.bodySmall,
@@ -125,7 +134,8 @@ fun FileSelectionScreen(
                         style = MaterialTheme.typography.bodyMedium
                     )
                     LazyColumn(
-                        modifier = Modifier
+                        modifier =
+                        Modifier
                             .fillMaxWidth()
                             .weight(1f)
                             .padding(bottom = 8.dp)
@@ -145,9 +155,12 @@ fun FileSelectionScreen(
             Button(
                 onClick = {
                     viewModel.confirmSelection()
-                    nav.navigate(NavRoutes.CONFIGURATION) // Navigate back to the configuration screen
+                    nav.navigate(
+                        NavRoutes.CONFIGURATION
+                    ) // Navigate back to the configuration screen
                 },
-                modifier = Modifier
+                modifier =
+                Modifier
                     .fillMaxWidth()
                     .padding(top = 8.dp)
             ) {
@@ -156,5 +169,3 @@ fun FileSelectionScreen(
         }
     }
 }
-
-

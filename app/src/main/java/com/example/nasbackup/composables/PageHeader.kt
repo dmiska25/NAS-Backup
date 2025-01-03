@@ -21,7 +21,8 @@ import androidx.compose.ui.unit.sp
 @Composable
 fun PageHeader(title: String, onBack: (() -> Unit)? = null) {
     Box(
-        modifier = Modifier
+        modifier =
+        Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
             .height(56.dp)
