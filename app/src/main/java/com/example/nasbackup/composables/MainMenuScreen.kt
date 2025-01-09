@@ -10,11 +10,18 @@ import androidx.navigation.NavHostController
 fun MainMenuScreen(nav: NavHostController) {
     Column {
         PageHeader(title = "Main Menu")
-        Button(onClick = { nav.navigate(NavRoutes.CONFIGURATION) }) {
-            Text("Configuration")
-        }
-        Button(onClick = { nav.navigate(NavRoutes.BACKUP_NOW) }) {
+        // Four prominent buttons
+        Button(onClick = { nav.navigate(NavRoutes.BACKUP_NOW_FLOW) }) {
             Text("Backup Now")
+        }
+        Button(onClick = { /* placeholder */ }) {
+            Text("Schedule (Coming Soon)")
+        }
+        Button(onClick = { /* placeholder */ }) {
+            Text("Restore (Coming Soon)")
+        }
+        Button(onClick = { /* placeholder */ }) {
+            Text("Jobs (Coming Soon)")
         }
     }
 }

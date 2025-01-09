@@ -2,23 +2,14 @@ package com.example.nasbackup.composables
 
 import android.os.Environment
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -27,30 +18,37 @@ import androidx.navigation.NavHostController
 import com.example.nasbackup.utils.checkStoragePermission
 import com.example.nasbackup.utils.listDirectories
 import com.example.nasbackup.utils.requestStoragePermission
-import com.example.nasbackup.views.FileSelectionViewModel
+import com.example.nasbackup.views.BackupNowFlowViewModel
+import com.example.nasbackup.views.DataSelectionViewModel
 
 @Composable
-fun FileSelectionScreen(
+fun BackupDataSelectionScreen(
     nav: NavHostController,
-    viewModel: FileSelectionViewModel = hiltViewModel()
+    parentVM: BackupNowFlowViewModel = hiltViewModel(),
+    viewModel: DataSelectionViewModel = hiltViewModel(),
+    onNext: () -> Unit
 ) {
     val context = LocalContext.current
     var hasPermission by remember { mutableStateOf(checkStoragePermission(context)) }
+
+    // Local file browsing
     var currentDirectory by remember { mutableStateOf(Environment.getExternalStorageDirectory()) }
-    val initialDirectory by remember { mutableStateOf(currentDirectory) }
+    val initialDirectory = remember { currentDirectory }
     var directories by remember { mutableStateOf(listDirectories(currentDirectory)) }
-    val tempSelectedFiles by viewModel.tempSelectedFiles
+
+    val selectedFiles by viewModel.selectedFiles.collectAsState()
+    val nextButtonEnabled by viewModel.nextButtonEnabled.collectAsState()
 
     Column(
-        modifier =
-        Modifier
+        modifier = Modifier
             .fillMaxSize()
             .padding(16.dp)
     ) {
-        // Header
-        PageHeader("File Selection", onBack = { nav.navigate(NavRoutes.CONFIGURATION) })
+        PageHeader(
+            title = "Select Files to Back Up",
+            onBack = { nav.popBackStack() }
+        )
 
-        // Permission Request Button
         if (!hasPermission) {
             Button(onClick = {
                 requestStoragePermission(context) {
@@ -64,30 +62,30 @@ fun FileSelectionScreen(
                 Text("Grant Permission")
             }
         } else {
-            // Go Up Button
+            // "Go Up" if possible
             if (currentDirectory.parentFile != null && currentDirectory != initialDirectory) {
-                Button(onClick = {
-                    currentDirectory = currentDirectory.parentFile!!
-                    directories = listDirectories(currentDirectory)
-                }, modifier = Modifier.padding(bottom = 16.dp)) {
+                Button(
+                    onClick = {
+                        currentDirectory.parentFile?.let { parentDir ->
+                            currentDirectory = parentDir
+                            directories = listDirectories(parentDir)
+                        }
+                    },
+                    modifier = Modifier.padding(bottom = 16.dp)
+                ) {
                     Text("Go Up")
                 }
             }
 
-            // Main Content: Scrollable Directory List and Fixed Footer
+            // Directory listing
             Column(modifier = Modifier.weight(1f)) {
-                // Directory list (Takes ~3/4 of the remaining space)
                 LazyColumn(modifier = Modifier.weight(3f)) {
                     items(directories) { dir ->
                         Row(
-                            modifier =
-                            Modifier
+                            modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable(
-                                    enabled =
-                                    !tempSelectedFiles.contains(dir.absolutePath) &&
-                                        dir.isDirectory
-                                ) {
+                                .clickable(enabled = dir.isDirectory) {
+                                    // If folder, open it
                                     if (dir.isDirectory) {
                                         currentDirectory = dir
                                         directories = listDirectories(dir)
@@ -97,25 +95,20 @@ fun FileSelectionScreen(
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = dir.name,
-                                    style = MaterialTheme.typography.bodyLarge
-                                )
-                                if (
-                                    dir.isDirectory &&
-                                    !tempSelectedFiles.contains(dir.absolutePath)
-                                ) {
+                                Text(dir.name, style = MaterialTheme.typography.bodyLarge)
+                                if (dir.isDirectory) {
                                     Text(
-                                        text = "(Folder)",
+                                        "(Folder)",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.secondary
                                     )
                                 }
                             }
+                            val isChecked = selectedFiles.contains(dir.absolutePath)
                             Checkbox(
-                                checked = tempSelectedFiles.contains(dir.absolutePath),
-                                onCheckedChange = { isChecked ->
-                                    if (isChecked) {
+                                checked = isChecked,
+                                onCheckedChange = { checked ->
+                                    if (checked) {
                                         viewModel.addFile(dir.absolutePath)
                                     } else {
                                         viewModel.removeFile(dir.absolutePath)
@@ -126,45 +119,37 @@ fun FileSelectionScreen(
                     }
                 }
 
-                // Selected Items (Takes ~1/4 of the remaining space)
+                // Show selected items
+                // TODO: We'll probably need to limit this in size
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "Selected Items:",
-                        modifier = Modifier.padding(vertical = 8.dp),
-                        style = MaterialTheme.typography.bodyMedium
+                        modifier = Modifier.padding(vertical = 8.dp)
                     )
-                    LazyColumn(
-                        modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .weight(1f)
-                            .padding(bottom = 8.dp)
-                    ) {
-                        items(tempSelectedFiles.toList()) { item ->
+                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        items(selectedFiles.toList()) { item ->
                             Text(
                                 text = item,
-                                style = MaterialTheme.typography.bodySmall,
-                                modifier = Modifier.padding(4.dp)
+                                modifier = Modifier.padding(4.dp),
+                                style = MaterialTheme.typography.bodySmall
                             )
                         }
                     }
                 }
             }
 
-            // Confirm and persist the selection (Fixed at bottom)
+            // Next
             Button(
                 onClick = {
-                    viewModel.confirmSelection()
-                    nav.navigate(
-                        NavRoutes.CONFIGURATION
-                    ) // Navigate back to the configuration screen
+                    viewModel.persistToParent(parentVM)
+                    onNext()
                 },
-                modifier =
-                Modifier
+                modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 8.dp)
+                    .padding(top = 8.dp),
+                enabled = nextButtonEnabled
             ) {
-                Text("Set Selection")
+                Text("Next")
             }
         }
     }
