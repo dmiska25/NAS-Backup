@@ -1,5 +1,8 @@
 package com.example.nasbackup.composables
 
+import android.os.Handler
+import android.os.Looper
+import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,6 +13,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -29,6 +34,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
@@ -44,6 +50,8 @@ fun ConnectionSettingsScreen(
     viewModel: ConnectionSettingsViewModel = hiltViewModel(),
     onNext: () -> Unit
 ) {
+    val context = LocalContext.current
+
     val scope = rememberCoroutineScope()
 
     val savedConnections by viewModel.savedConnections.collectAsState()
@@ -62,7 +70,11 @@ fun ConnectionSettingsScreen(
     val canNavigateUp = viewModel.allowedToNavigateUp()
 
     var expandedDropdown by remember { mutableStateOf(false) }
-    var selectedConnectionLabel by remember { mutableStateOf("Select Saved Connection") }
+    var selectedConnectionLabel by remember {
+        mutableStateOf(
+            ConnectionSettingsViewModel.NO_SELECTION
+        )
+    }
 
     var showNewFolderInput by remember { mutableStateOf(false) }
     var newFolderName by remember { mutableStateOf("") }
@@ -114,9 +126,9 @@ fun ConnectionSettingsScreen(
                     )
                 }
                 DropdownMenuItem(
-                    text = { Text("New Connection") },
+                    text = { Text(ConnectionSettingsViewModel.NEW_CONNECTION) },
                     onClick = {
-                        selectedConnectionLabel = "New Connection"
+                        selectedConnectionLabel = ConnectionSettingsViewModel.NEW_CONNECTION
                         viewModel.onSelectNewConnection()
                         expandedDropdown = false
                     }
@@ -126,33 +138,36 @@ fun ConnectionSettingsScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Fields for IP, Share, User, Pass
-        TextFieldWithLabel("IP Address", ipAddress) { viewModel.ipAddress.value = it }
-        TextFieldWithLabel("Share Name", shareName) { viewModel.shareName.value = it }
-        TextFieldWithLabel("Username", username) { viewModel.username.value = it }
-        TextFieldWithLabel("Password", password) { viewModel.password.value = it }
+        if (selectedConnectionLabel != ConnectionSettingsViewModel.NO_SELECTION) {
+            TextFieldWithLabel("IP Address", ipAddress) { viewModel.ipAddress.value = it }
+            TextFieldWithLabel("Share Name", shareName) { viewModel.shareName.value = it }
+            TextFieldWithLabel("Username", username) { viewModel.username.value = it }
+            TextFieldWithLabel("Password", password) { viewModel.password.value = it }
+        }
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // "Save Connection" button
-        Button(
-            onClick = {
-                scope.launch {
-                    viewModel.saveConnection()
-                    selectedConnectionLabel = "$ipAddress/$shareName"
-                    // We could optionally show a snack/Toast
-                }
-            },
-            modifier = Modifier.padding(bottom = 8.dp),
-            enabled = ipAddress.isNotBlank() && shareName.isNotBlank() &&
-                username.isNotBlank() && password.isNotBlank()
-        ) {
-            Text("Save Connection")
-        }
-
         // Test Connection
         Button(
-            onClick = { viewModel.testConnection() },
+            onClick = {
+                viewModel.testConnection { isSuccess ->
+                    Handler(Looper.getMainLooper()).post {
+                        if (isSuccess) {
+                            Toast.makeText(
+                                context,
+                                "Connection test successful",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        } else {
+                            Toast.makeText(
+                                context,
+                                "Connection test failed",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    }
+                }
+            },
             enabled = !isTestingConnection && canTestConn
         ) {
             if (isTestingConnection) {
@@ -213,10 +228,9 @@ fun ConnectionSettingsScreen(
             Box(
                 modifier = Modifier
                     .height(200.dp)
-                    .verticalScroll(rememberScrollState())
             ) {
-                Column {
-                    directories.forEach { dir ->
+                LazyColumn {
+                    items(directories) { dir ->
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -244,6 +258,36 @@ fun ConnectionSettingsScreen(
             selectedBackupDirectory?.let {
                 Text("Selected Directory: ${it.canonicalPath}")
             }
+        }
+
+        // "Save Connection" button
+        Button(
+            onClick = {
+                scope.launch {
+                    viewModel.saveConnection { success ->
+                        if (success) {
+                            selectedConnectionLabel = "$ipAddress/$shareName"
+                            Toast.makeText(
+                                nav.context,
+                                "Connection saved successfully",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        } else {
+                            Toast.makeText(
+                                nav.context,
+                                "Failed to save connection",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    }
+                }
+            },
+            modifier = Modifier.padding(bottom = 8.dp),
+            enabled = isConnectionTestSuccessful &&
+                selectedBackupDirectory != null &&
+                selectedConnectionLabel == ConnectionSettingsViewModel.NEW_CONNECTION
+        ) {
+            Text("Save Connection")
         }
 
         // "Continue" only if connection tested & location chosen

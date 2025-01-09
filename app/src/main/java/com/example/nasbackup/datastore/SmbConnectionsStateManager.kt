@@ -67,6 +67,7 @@ class SmbConnectionsStateManager @Inject constructor(
             try {
                 objectMapper.readValue<SmbFileContext>(json)
             } catch (e: Exception) {
+                println("Failed to parse JSON: $json")
                 null
             }
         }

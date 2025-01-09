@@ -16,7 +16,6 @@ import kotlinx.coroutines.withContext
 class ConnectionSettingsViewModel @Inject constructor(
     private val smbConnectionsStateManager: SmbConnectionsStateManager
 ) : ViewModel() {
-
     // Observed from DataStore manager
     private val _savedConnections = smbConnectionsStateManager.savedConnections
     val savedConnections: StateFlow<List<SmbFileContext>> = _savedConnections
@@ -53,34 +52,36 @@ class ConnectionSettingsViewModel @Inject constructor(
     val selectedBackupDirectory: StateFlow<SmbFile?> = _selectedBackupDirectory
 
     init {
-        // Recalculate canTestConnection whenever fields change
+        // recalcCanTest and set connection test false whenever fields change
         combine(
             ipAddress,
             shareName,
             username,
             password
-        ) { ip, share, user, pass ->
-            // True if either we have a currentlySelectedConnection or we have all fields non-empty
-            currentlySelectedConnection != null || (
-                ip.isNotBlank() &&
-                    share.isNotBlank() &&
-                    user.isNotBlank() &&
-                    pass.isNotBlank()
-                )
-        }.onEach { canTest ->
-            _canTestConnection.value = canTest
+        ) { _, _, _, _ -> }.onEach {
+            recalcCanTest()
+            _isConnectionTestSuccessful.value = false
         }.launchIn(viewModelScope)
     }
 
     fun onSelectSavedConnection(creds: SmbFileContext) {
-        currentlySelectedConnection = creds
-        ipAddress.value = creds.ipAddress
-        shareName.value = creds.shareName
-        // TODO: Can the username and password be null?
-        username.value = creds.username ?: ""
-        password.value = creds.password ?: ""
-        _isConnectionTestSuccessful.value = false
-        recalcCanTest()
+        viewModelScope.launch(Dispatchers.IO) {
+            currentlySelectedConnection = creds
+            ipAddress.value = creds.ipAddress
+            shareName.value = creds.shareName
+            username.value = creds.username ?: ""
+            password.value = creds.password ?: ""
+            _selectedBackupDirectory.value = creds.route?.let {
+                val smbFile = createSmbFile(it)
+                if (smbFile.exists() && smbFile.isDirectory) {
+                    smbFile
+                } else {
+                    null
+                }
+            }
+            _isConnectionTestSuccessful.value = false
+            recalcCanTest()
+        }
     }
 
     fun onSelectNewConnection() {
@@ -95,31 +96,33 @@ class ConnectionSettingsViewModel @Inject constructor(
 
     private fun recalcCanTest() {
         _canTestConnection.value =
-            currentlySelectedConnection != null ||
-            (
-                ipAddress.value.isNotBlank() &&
-                    shareName.value.isNotBlank() &&
-                    username.value.isNotBlank() &&
-                    password.value.isNotBlank()
-                )
+            ipAddress.value.isNotBlank() &&
+                shareName.value.isNotBlank()
     }
 
-    fun saveConnection() {
-        // Save to DataStore
+    fun saveConnection(onResult: (success: Boolean) -> Unit) {
         viewModelScope.launch {
-            val newCreds = SmbFileContext(
-                ipAddress = ipAddress.value,
-                shareName = shareName.value,
-                username = username.value,
-                password = password.value
-            )
-            smbConnectionsStateManager.saveConnection(newCreds)
-            // Mark it as currently selected
-            currentlySelectedConnection = newCreds
+            try {
+                val newCreds = SmbFileContext(
+                    ipAddress = ipAddress.value,
+                    shareName = shareName.value,
+                    username = username.value,
+                    password = password.value,
+                    route = _selectedBackupDirectory.value?.canonicalPath
+                )
+                smbConnectionsStateManager.saveConnection(newCreds)
+                // Mark it as currently selected
+                currentlySelectedConnection = newCreds
+            } catch (e: Exception) {
+                println("Error saving connection: $e")
+                onResult(false)
+                return@launch
+            }
+            onResult(true)
         }
     }
 
-    fun testConnection() {
+    fun testConnection(onResult: (success: Boolean) -> Unit) {
         if (!_canTestConnection.value) return
         _isTestingConnection.value = true
         _isConnectionTestSuccessful.value = false
@@ -138,6 +141,7 @@ class ConnectionSettingsViewModel @Inject constructor(
                     loadDirectory(null)
                 }
             }
+            onResult(success)
         }
     }
 
@@ -243,5 +247,10 @@ class ConnectionSettingsViewModel @Inject constructor(
                 route = _selectedBackupDirectory.value?.canonicalPath
             )
         )
+    }
+
+    companion object {
+        const val NEW_CONNECTION: String = "New Connection"
+        const val NO_SELECTION: String = "Select Saved Connection"
     }
 }

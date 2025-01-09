@@ -40,6 +40,12 @@ class DataSelectionViewModel @Inject constructor(
 
     fun persistToParent(parent: BackupNowFlowViewModel) {
         parent.setSelectedFiles(_selectedFiles.value)
-        parent.saveFileSelectionToDataStore()
+        viewModelScope.launch {
+            try {
+                fileSelectionStateManager.persistSelectedFiles(_selectedFiles.value)
+            } catch (e: Exception) {
+                println("Error saving file selection: $e")
+            }
+        }
     }
 }

@@ -4,8 +4,6 @@ import android.content.Context
 import android.content.Intent
 import android.widget.Toast
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
-import com.example.nasbackup.datastore.FileSelectionStateManager
 import com.example.nasbackup.domain.SmbFileContext
 import com.example.nasbackup.service.BackupForegroundService
 import com.example.nasbackup.utils.checkNotificationPermission
@@ -15,12 +13,9 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.launch
 
 @HiltViewModel
-class BackupNowFlowViewModel @Inject constructor(
-    private val fileSelectionStateManager: FileSelectionStateManager
-) : ViewModel() {
+class BackupNowFlowViewModel @Inject constructor() : ViewModel() {
 
     companion object {
         val mapper = ObjectMapper()
@@ -38,12 +33,6 @@ class BackupNowFlowViewModel @Inject constructor(
 
     fun setSmbFileContext(context: SmbFileContext) {
         _smbFileContext.value = context
-    }
-
-    fun saveFileSelectionToDataStore() {
-        viewModelScope.launch {
-            fileSelectionStateManager.persistSelectedFiles(_selectedFiles.value)
-        }
     }
 
     fun initiateBackup(context: Context) {
